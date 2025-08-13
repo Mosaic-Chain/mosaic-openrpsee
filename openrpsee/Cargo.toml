@@ -1,0 +1,14 @@
+[package]
+name = "openrpsee"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+openrpsee-macros = { path = "../macros" }
+schemars = { version = "1", features = ["preserve_order"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+jsonrpsee = { version = "0.25", features = ["macros", "server"] }
+schemars = { version = "1", features = ["derive"] }
