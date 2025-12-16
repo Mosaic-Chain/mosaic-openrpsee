@@ -27,7 +27,7 @@ pub trait MyRpc {
     /// # This method does the foo!
     ///
     /// And it does it really well!
-    #[method(name = "foo")]
+    #[method(name = "foo", aliases = ["nonamespacefoo", "oldnamespace_foo"])]
     async fn foo(&self, limit: Option<u32>, any: serde_json::Value) -> RpcResult<FooRes>;
 
     /// This is a subscription

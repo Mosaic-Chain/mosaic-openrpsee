@@ -10,7 +10,7 @@ use syn::{
     parse_macro_input,
     punctuated::Punctuated,
     spanned::Spanned,
-    token::Paren,
+    token::{Bracket, Paren},
 };
 use unescape::unescape;
 
@@ -39,6 +39,8 @@ pub fn openrpc(attr: TokenStream, item: TokenStream) -> TokenStream {
     let tag = attr.find_attr("tag").to_quote();
 
     let methods = rpc_definition.methods.iter().filter_map(|method|{
+        // TODO: should deprecated methods be ignored completely, or should/could we mark them deprecated in the
+        // result?
         if method.deprecated {
             return None;
         }
@@ -57,7 +59,7 @@ pub fn openrpc(attr: TokenStream, item: TokenStream) -> TokenStream {
             inputs.push(quote! {
                 let des = builder.create_content_descriptor::<#ty>(#name, None, #description, #required);
                 inputs.push(des);
-            })
+            });
         }
         let returns_ty = if let Some(ty) = &method.returns {
             let (ty, required) = extract_type_from_option(ty.clone());
@@ -67,18 +69,33 @@ pub fn openrpc(attr: TokenStream, item: TokenStream) -> TokenStream {
             quote! {None;}
         };
 
+        
         if method.is_pubsub {
+            let aliases = method.aliases.iter().map(|alias| {
+                quote!{
+                    builder.add_subscription(None, #alias, inputs.clone(), result.clone(), #doc, #tag, #deprecated);
+                }
+            });
+
             Some(quote! {
                 let mut inputs: Vec<openrpsee::ContentDescriptor> = Vec::new();
                 #(#inputs)*
                 let result = #returns_ty
+                #(#aliases)*
                 builder.add_subscription(#namespace, #name, inputs, result, #doc, #tag, #deprecated);
             })
         } else {
+            let aliases = method.aliases.iter().map(|alias| {
+                quote!{
+                    builder.add_method(None, #alias, inputs.clone(), result.clone(), #doc, #tag, #deprecated);
+                }
+            });
+
             Some(quote! {
                 let mut inputs: Vec<openrpsee::ContentDescriptor> = Vec::new();
                 #(#inputs)*
                 let result = #returns_ty
+                #(#aliases)*
                 builder.add_method(#namespace, #name, inputs, result, #doc, #tag, #deprecated);
             })
         }
@@ -120,6 +137,7 @@ struct RpcDefinition {
 }
 struct Method {
     name: String,
+    aliases: Vec<String>,
     params: Vec<(String, Type, Option<String>)>,
     returns: Option<Type>,
     doc: String,
@@ -165,7 +183,7 @@ fn parse_rpc_method(trait_data: &mut syn::ItemTrait) -> Result<RpcDefinition, sy
                 })
                 .collect::<Result<_, _>>()?;
 
-            let (method_name, returns, is_pubsub, deprecated) =
+            let (method_name, returns, aliases, is_pubsub, deprecated) =
                 if let Some(attr) = find_attr(&mut method.attrs, "method") {
                     let returns = match &method.sig.output {
                         syn::ReturnType::Default => None,
@@ -174,12 +192,18 @@ fn parse_rpc_method(trait_data: &mut syn::ItemTrait) -> Result<RpcDefinition, sy
 
                     let attributes: Attributes = attr.parse_args()?;
                     let method_name = attributes.get_value("name");
+                    let aliases = attributes
+                        .find("aliases")
+                        .map_or_else(Vec::new, |_| attributes.get_values("aliases"));
                     let deprecated = attributes.find("deprecated").is_some();
 
-                    (method_name, returns, false, deprecated)
+                    (method_name, returns, aliases, false, deprecated)
                 } else if let Some(attr) = find_attr(&mut method.attrs, "subscription") {
                     let attributes: Attributes = attr.parse_args()?;
                     let name = attributes.get_value("name");
+                    let aliases = attributes
+                        .find("aliases")
+                        .map_or_else(Vec::new, |_| attributes.get_values("aliases"));
                     let type_ = attributes
                         .find("item")
                         .expect("Subscription should have a [item] attribute")
@@ -188,13 +212,14 @@ fn parse_rpc_method(trait_data: &mut syn::ItemTrait) -> Result<RpcDefinition, sy
                         .expect("[item] attribute should have a value");
                     let deprecated = attributes.find("deprecated").is_some();
 
-                    (name, Some(type_), true, deprecated)
+                    (name, Some(type_), aliases, true, deprecated)
                 } else {
                     panic!("Unknown method name")
                 };
 
             methods.push(Method {
                 name: method_name,
+                aliases,
                 params,
                 returns,
                 doc,
@@ -365,15 +390,25 @@ impl Attributes {
     pub fn find(&self, attr_name: &str) -> Option<&Attr> {
         self.attrs.iter().find(|attr| attr.key == attr_name)
     }
+
     pub fn get_value(&self, attr_name: &str) -> String {
-        self.attrs
-            .iter()
-            .find(|attr| attr.key == attr_name)
+        self.find(attr_name)
             .unwrap_or_else(|| panic!("Method should have a [{attr_name}] attribute."))
             .value
-            .as_ref()
-            .unwrap_or_else(|| panic!("[{attr_name}] attribute should have a value"))
-            .value()
+            .first()
+            .map_or_else(
+                || panic!("[{attr_name}] attribute should have a value"),
+                syn::LitStr::value,
+            )
+    }
+
+    pub fn get_values(&self, attr_name: &str) -> Vec<String> {
+        self.find(attr_name)
+            .unwrap_or_else(|| panic!("Method should have a [{attr_name}] attribute."))
+            .value
+            .iter()
+            .map(syn::LitStr::value)
+            .collect()
     }
 }
 
@@ -385,26 +420,28 @@ impl Parse for Attributes {
 }
 
 #[derive(Debug)]
+struct LitStrList {
+    pub list: Punctuated<syn::LitStr, Token![,]>,
+}
+
+impl Parse for LitStrList {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let content;
+
+        syn::bracketed!(content in input);
+
+        let list = content.parse_terminated(Parse::parse, Token![,])?;
+
+        Ok(Self { list })
+    }
+}
+
+#[derive(Debug)]
 struct Attr {
     pub key: Ident,
     pub token: Option<TokenStream2>,
-    pub value: Option<syn::LitStr>,
+    pub value: Vec<syn::LitStr>,
     pub type_: Option<Type>,
-}
-
-impl ToTokens for Attr {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        tokens.append(self.key.clone());
-        if let Some(token) = &self.token {
-            tokens.extend(token.to_token_stream());
-        }
-        if let Some(value) = &self.value {
-            tokens.append(value.token());
-        }
-        if let Some(type_) = &self.type_ {
-            tokens.extend(type_.to_token_stream());
-        }
-    }
 }
 
 impl Parse for Attr {
@@ -416,10 +453,12 @@ impl Parse for Attr {
             None
         };
 
-        let value = if token.is_some() && input.peek(syn::LitStr) {
-            Some(input.parse::<syn::LitStr>()?)
+        let value = if input.peek(syn::LitStr) {
+            vec![input.parse::<syn::LitStr>()?]
+        } else if input.peek(syn::token::Bracket) {
+            input.parse::<LitStrList>()?.list.into_iter().collect()
         } else {
-            None
+            Vec::new()
         };
 
         let type_ = if token.is_some() && input.peek(syn::Ident) {
