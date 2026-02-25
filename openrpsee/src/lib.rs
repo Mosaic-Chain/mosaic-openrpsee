@@ -4,7 +4,7 @@ use schemars::{JsonSchema, Schema, SchemaGenerator, generate::SchemaSettings};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub use openrpsee_macros::openrpc;
+pub use mosaic_openrpsee_derive::openrpc;
 
 pub const OPENRPC_VERSION: &str = "1.3.2";
 
@@ -107,6 +107,7 @@ impl Project {
         ProjectBuilder::new(title, version)
     }
 
+    #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
         version: &str,
@@ -405,6 +406,7 @@ impl RpcModuleDocBuilder {
         }
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub fn add_method(
         &mut self,
         namespace: Option<&str>,
@@ -419,6 +421,7 @@ impl RpcModuleDocBuilder {
         self.add_method_internal(namespace, name, params, result, doc, tags, deprecated);
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub fn add_subscription(
         &mut self,
         namespace: Option<&str>,
@@ -435,6 +438,7 @@ impl RpcModuleDocBuilder {
         self.add_method_internal(namespace, name, params, result, doc, tags, deprecated);
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn add_method_internal(
         &mut self,
         namespace: Option<&str>,
