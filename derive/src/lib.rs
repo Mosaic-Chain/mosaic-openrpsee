@@ -10,7 +10,7 @@ use syn::{
     parse_macro_input,
     punctuated::Punctuated,
     spanned::Spanned,
-    token::{Paren},
+    token::Paren,
 };
 use unescape::unescape;
 
@@ -69,7 +69,6 @@ pub fn openrpc(attr: TokenStream, item: TokenStream) -> TokenStream {
             quote! {None;}
         };
 
-        
         if method.is_pubsub {
             let aliases = method.aliases.iter().map(|alias| {
                 quote!{
@@ -242,11 +241,13 @@ fn extract_type_from(ty: &Type, from_ty: &str) -> Option<Type> {
     }
 
     if let Type::Path(p) = ty
-        && p.qself.is_none() && path_is(&p.path, from_ty)
-            && let PathArguments::AngleBracketed(a) = &p.path.segments[0].arguments
-                && let Some(GenericArgument::Type(ty)) = a.args.first() {
-                    return Some(ty.clone());
-                }
+        && p.qself.is_none()
+        && path_is(&p.path, from_ty)
+        && let PathArguments::AngleBracketed(a) = &p.path.segments[0].arguments
+        && let Some(GenericArgument::Type(ty)) = a.args.first()
+    {
+        return Some(ty.clone());
+    }
     None
 }
 
