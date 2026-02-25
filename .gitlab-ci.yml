@@ -1,0 +1,26 @@
+stages:
+  - test
+  - release
+
+cache:
+  paths:
+    - target/
+
+include:
+  - project: "mosaic-chain/gitlab-ci-templates"
+    file: "/opensource.yml"
+    ref: main
+
+test:
+  stage: test
+  image: rust:1.92-bookworm
+  script:
+    - rustup component add rustfmt
+    - rustup component add clippy
+    - cargo fmt -- --check
+    - cargo clippy --color=always --tests --examples --bins --benches --no-deps -- -D warnings
+    - cargo test
+
+opensource:
+  extends: .github-release
+  stage: release
