@@ -3,14 +3,14 @@ use proc_macro::TokenStream;
 use derive_syn_parse::Parse;
 use itertools::Itertools;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2, TokenTree};
-use quote::{ToTokens, TokenStreamExt, quote};
+use quote::{ToTokens, quote};
 use syn::{
     Attribute, GenericArgument, LitStr, PatType, Path, PathArguments, Token, TraitItem, Type,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
     spanned::Spanned,
-    token::{Bracket, Paren},
+    token::{Paren},
 };
 use unescape::unescape;
 
@@ -78,7 +78,7 @@ pub fn openrpc(attr: TokenStream, item: TokenStream) -> TokenStream {
             });
 
             Some(quote! {
-                let mut inputs: Vec<openrpsee::ContentDescriptor> = Vec::new();
+                let mut inputs: Vec<mosaic_openrpsee::ContentDescriptor> = Vec::new();
                 #(#inputs)*
                 let result = #returns_ty
                 #(#aliases)*
@@ -92,7 +92,7 @@ pub fn openrpc(attr: TokenStream, item: TokenStream) -> TokenStream {
             });
 
             Some(quote! {
-                let mut inputs: Vec<openrpsee::ContentDescriptor> = Vec::new();
+                let mut inputs: Vec<mosaic_openrpsee::ContentDescriptor> = Vec::new();
                 #(#inputs)*
                 let result = #returns_ty
                 #(#aliases)*
@@ -107,8 +107,8 @@ pub fn openrpc(attr: TokenStream, item: TokenStream) -> TokenStream {
         #trait_data
         pub struct #open_rpc_name;
         impl #open_rpc_name {
-            pub fn module_doc() -> openrpsee::Module{
-                let mut builder = openrpsee::RpcModuleDocBuilder::default();
+            pub fn module_doc() -> mosaic_openrpsee::Module{
+                let mut builder = mosaic_openrpsee::RpcModuleDocBuilder::default();
                 #(#methods)*
                 builder.build()
             }
@@ -241,15 +241,12 @@ fn extract_type_from(ty: &Type, from_ty: &str) -> Option<Type> {
             && path.segments.iter().next().unwrap().ident == from_ty
     }
 
-    if let Type::Path(p) = ty {
-        if p.qself.is_none() && path_is(&p.path, from_ty) {
-            if let PathArguments::AngleBracketed(a) = &p.path.segments[0].arguments {
-                if let Some(GenericArgument::Type(ty)) = a.args.first() {
+    if let Type::Path(p) = ty
+        && p.qself.is_none() && path_is(&p.path, from_ty)
+            && let PathArguments::AngleBracketed(a) = &p.path.segments[0].arguments
+                && let Some(GenericArgument::Type(ty)) = a.args.first() {
                     return Some(ty.clone());
                 }
-            }
-        }
-    }
     None
 }
 
@@ -439,7 +436,7 @@ impl Parse for LitStrList {
 #[derive(Debug)]
 struct Attr {
     pub key: Ident,
-    pub token: Option<TokenStream2>,
+    pub _token: Option<TokenStream2>,
     pub value: Vec<syn::LitStr>,
     pub type_: Option<Type>,
 }
@@ -469,7 +466,7 @@ impl Parse for Attr {
 
         Ok(Self {
             key,
-            token,
+            _token: token,
             value,
             type_,
         })

@@ -5,7 +5,7 @@ use jsonrpsee::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use openrpsee::{Contact, Project, openrpc};
+use mosaic_openrpsee::{Contact, Project, openrpc};
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Bar {

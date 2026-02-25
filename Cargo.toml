@@ -1,8 +1,13 @@
 [workspace]
 members = [
-  "macros",
+  "derive",
   "openrpsee",
 ]
 
 resolver = "3"
 
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0 OR (GPL-3.0-or-later WITH Classpath-exception-2.0)"
+repository = "https://github.com/Mosaic-Chain/mosaic-openrpsee"
