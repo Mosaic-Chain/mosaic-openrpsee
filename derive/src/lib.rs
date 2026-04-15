@@ -5,12 +5,12 @@ use itertools::Itertools;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2, TokenTree};
 use quote::{ToTokens, quote};
 use syn::{
-    Attribute, GenericArgument, LitStr, PatType, Path, PathArguments, Token, TraitItem, Type,
+    Attribute, GenericArgument, ItemTrait, LitStr, PatType, Path, PathArguments, Token, TraitItem,
+    Type,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
     spanned::Spanned,
-    token::Paren,
 };
 use unescape::unescape;
 
@@ -26,7 +26,7 @@ use unescape::unescape;
 pub fn openrpc(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr: OpenRpcAttributes = parse_macro_input!(attr as OpenRpcAttributes);
 
-    let mut trait_data: syn::ItemTrait = syn::parse(item).unwrap();
+    let mut trait_data = parse_macro_input!(item as ItemTrait);
 
     let rpc_definition = parse_rpc_method(&mut trait_data).unwrap();
 
@@ -144,7 +144,7 @@ struct Method {
     deprecated: bool,
 }
 
-fn parse_rpc_method(trait_data: &mut syn::ItemTrait) -> Result<RpcDefinition, syn::Error> {
+fn parse_rpc_method(trait_data: &mut ItemTrait) -> Result<RpcDefinition, syn::Error> {
     let mut methods = Vec::new();
     for trait_item in &mut trait_data.items {
         if let TraitItem::Fn(method) = trait_item {
@@ -154,30 +154,31 @@ fn parse_rpc_method(trait_data: &mut syn::ItemTrait) -> Result<RpcDefinition, sy
                 .inputs
                 .iter_mut()
                 .filter_map(|arg| {
-                    match arg {
-                        syn::FnArg::Receiver(_) => None,
-                        syn::FnArg::Typed(arg) => {
-                            let description = if let Some(description) = arg.attrs.iter().position(|a|a.path().is_ident("doc")){
-                                let doc = extract_doc_comments(&arg.attrs);
-                                arg.attrs.remove(description);
-                                Some(doc)
-                            }else{
-                                None
-                            };
-                            match *arg.pat.clone() {
-                                syn::Pat::Ident(name) => {
-                                    Some(get_type(arg).map(|ty| (name.ident.to_string(), ty, description)))
-                                }
-                                syn::Pat::Wild(wild) => Some(Err(syn::Error::new(
-                                    wild.underscore_token.span(),
-                                    "Method argument names must be valid Rust identifiers; got `_` instead",
-                                ))),
-                                _ => Some(Err(syn::Error::new(
-                                    arg.span(),
-                                    format!("Unexpected method signature input; got {:?} ", *arg.pat),
-                                ))),
+                    if let syn::FnArg::Typed(arg) = arg {
+                        let attrs = &mut arg.attrs;
+                        let description = if let Some(description) = attrs.iter().position(|a|a.path().is_ident("doc")){
+                            let doc = extract_doc_comments(attrs);
+                            attrs.remove(description);
+                            Some(doc)
+                        }else{
+                            None
+                        };
+
+                        match *arg.pat.clone() {
+                            syn::Pat::Ident(name) => {
+                                Some(get_type(arg).map(|ty| (name.ident.to_string(), ty, description)))
                             }
-                        },
+                            syn::Pat::Wild(wild) => Some(Err(syn::Error::new(
+                                wild.underscore_token.span(),
+                                "Method argument names must be valid Rust identifiers; got `_` instead",
+                            ))),
+                            _ => Some(Err(syn::Error::new(
+                                arg.span(),
+                                format!("Unexpected method signature input; got {:?} ", *arg.pat),
+                            ))),
+                        }
+                    } else {
+                        None
                     }
                 })
                 .collect::<Result<_, _>>()?;
@@ -264,9 +265,9 @@ fn get_type(pat_type: &mut PatType) -> Result<Type, syn::Error> {
         if let Some((pos, attr)) = pat_type
             .attrs
             .iter()
-            .find_position(|a| a.path().is_ident("schemars"))
+            .find_position(|a| a.path().is_ident("schema"))
         {
-            let attribute = syn::parse::<NamedAttribute>(attr.clone().into_token_stream().into())?;
+            let attribute = attr.parse_args::<NamedAttribute>()?;
 
             let stream = syn::parse_str(&attribute.value.value())?;
             let tokens = respan_token_stream(stream, attribute.value.span());
@@ -369,13 +370,8 @@ struct OpenRpcAttribute {
 
 #[derive(Parse, Debug)]
 struct NamedAttribute {
-    #[paren]
-    _paren_token: Paren,
-    #[inside(_paren_token)]
     _ident: Ident,
-    #[inside(_paren_token)]
     _eq_token: Token![=],
-    #[inside(_paren_token)]
     value: syn::LitStr,
 }
 

@@ -4,6 +4,7 @@ use jsonrpsee::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 use mosaic_openrpsee::{Contact, Project, openrpc};
 
@@ -28,11 +29,20 @@ pub trait MyRpc {
     ///
     /// And it does it really well!
     #[method(name = "foo", aliases = ["nonamespacefoo", "oldnamespace_foo"])]
-    async fn foo(&self, limit: Option<u32>, any: serde_json::Value) -> RpcResult<FooRes>;
+    async fn foo(
+        &self,
+        limit: Option<u32>,
+        any: serde_json::Value,
+        #[schema(with = "String")] path_buf: PathBuf,
+    ) -> RpcResult<FooRes>;
 
     /// This is a subscription
     #[subscription(name = "subscribe_bar", item = Bar)]
-    async fn subscribe_bar(&self, idx: u32) -> SubscriptionResult;
+    async fn subscribe_bar(
+        &self,
+        idx: u32,
+        #[schema(with = "String")] path_buf: PathBuf,
+    ) -> SubscriptionResult;
 }
 
 fn main() {
