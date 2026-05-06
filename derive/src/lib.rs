@@ -48,16 +48,21 @@ pub fn openrpc(attr: TokenStream, item: TokenStream) -> TokenStream {
         let deprecated = method.deprecated;
         let doc = &method.doc;
         let mut inputs = Vec::new();
-        for (name, ty, description) in &method.params {
+        for (name, ty, description, title) in &method.params {
             let (ty, required) = extract_type_from_option(ty.clone());
             let description = if let Some(description) = description {
                 quote! {Some(#description.to_string())}
             } else {
                 quote! {None}
             };
+            let title = if let Some(title) = title {
+                quote! {Some(#title.to_string())}
+            } else {
+                quote! {None}
+            };
 
             inputs.push(quote! {
-                let des = builder.create_content_descriptor::<#ty>(#name, None, #description, #required);
+                let des = builder.create_content_descriptor::<#ty>(#name, #title, #description, #required);
                 inputs.push(des);
             });
         }
@@ -137,7 +142,7 @@ struct RpcDefinition {
 struct Method {
     name: String,
     aliases: Vec<String>,
-    params: Vec<(String, Type, Option<String>)>,
+    params: Vec<(String, Type, Option<String>, Option<String>)>,
     returns: Option<Type>,
     doc: String,
     is_pubsub: bool,
@@ -156,7 +161,7 @@ fn parse_rpc_method(trait_data: &mut ItemTrait) -> Result<RpcDefinition, syn::Er
                 .filter_map(|arg| {
                     if let syn::FnArg::Typed(arg) = arg {
                         let attrs = &mut arg.attrs;
-                        let description = if let Some(description) = attrs.iter().position(|a|a.path().is_ident("doc")){
+                        let doc_description = if let Some(description) = attrs.iter().position(|a| a.path().is_ident("doc")) {
                             let doc = extract_doc_comments(attrs);
                             attrs.remove(description);
                             Some(doc)
@@ -166,7 +171,10 @@ fn parse_rpc_method(trait_data: &mut ItemTrait) -> Result<RpcDefinition, syn::Er
 
                         match *arg.pat.clone() {
                             syn::Pat::Ident(name) => {
-                                Some(get_type(arg).map(|ty| (name.ident.to_string(), ty, description)))
+                                Some(get_schema_info(arg).map(|(ty, title, schema_description)| {
+                                    let description = schema_description.or(doc_description);
+                                    (name.ident.to_string(), ty, description, title)
+                                }))
                             }
                             syn::Pat::Wild(wild) => Some(Err(syn::Error::new(
                                 wild.underscore_token.span(),
@@ -260,25 +268,39 @@ fn extract_type_from_option(ty: Type) -> (Type, bool) {
     }
 }
 
-fn get_type(pat_type: &mut PatType) -> Result<Type, syn::Error> {
-    Ok(
-        if let Some((pos, attr)) = pat_type
-            .attrs
-            .iter()
-            .find_position(|a| a.path().is_ident("schema"))
-        {
-            let attribute = attr.parse_args::<NamedAttribute>()?;
+fn get_schema_info(
+    pat_type: &mut PatType,
+) -> Result<(Type, Option<String>, Option<String>), syn::Error> {
+    if let Some((pos, attr)) = pat_type
+        .attrs
+        .iter()
+        .find_position(|a| a.path().is_ident("schema"))
+    {
+        let attributes: Attributes = attr.parse_args()?;
 
-            let stream = syn::parse_str(&attribute.value.value())?;
-            let tokens = respan_token_stream(stream, attribute.value.span());
-
-            let path = syn::parse2(tokens)?;
-            pat_type.attrs.remove(pos);
-            path
+        let ty = if let Some(with_attr) = attributes.find("with") {
+            let value = with_attr.value.first().expect("with should have a value");
+            let stream = syn::parse_str(&value.value())?;
+            let tokens = respan_token_stream(stream, value.span());
+            syn::parse2(tokens)?
         } else {
             pat_type.ty.as_ref().clone()
-        },
-    )
+        };
+
+        let title = attributes
+            .find("title")
+            .and_then(|a| a.value.first())
+            .map(|v| v.value());
+        let description = attributes
+            .find("description")
+            .and_then(|a| a.value.first())
+            .map(|v| v.value());
+
+        pat_type.attrs.remove(pos);
+        Ok((ty, title, description))
+    } else {
+        Ok((pat_type.ty.as_ref().clone(), None, None))
+    }
 }
 
 fn find_attr<'a>(attrs: &'a mut [Attribute], ident: &str) -> Option<&'a mut Attribute> {
@@ -364,13 +386,6 @@ impl Parse for OpenRpcAttributes {
 #[derive(Parse, Debug)]
 struct OpenRpcAttribute {
     label: Ident,
-    _eq_token: Token![=],
-    value: syn::LitStr,
-}
-
-#[derive(Parse, Debug)]
-struct NamedAttribute {
-    _ident: Ident,
     _eq_token: Token![=],
     value: syn::LitStr,
 }

@@ -33,7 +33,12 @@ pub trait MyRpc {
         &self,
         limit: Option<u32>,
         any: serde_json::Value,
-        #[schema(with = "String")] path_buf: PathBuf,
+        #[schema(
+            with = "String",
+            title = "PathId",
+            description = "Filesystem path as a string"
+        )]
+        path_buf: PathBuf,
     ) -> RpcResult<FooRes>;
 
     /// This is a subscription
